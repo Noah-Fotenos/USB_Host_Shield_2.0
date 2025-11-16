@@ -1508,6 +1508,47 @@ MAKE_PIN(P19, GPIOC, GPIO_PIN_0); // A5
 
 #elif defined(ARDUINO_NRF52840_FEATHER) || defined(ARDUINO_NRF52840_FEATHER_SENSE)
 
+#elif defined(STM32L432xx)
+// NUCLEO-L432KC (and similar STM32L432 boards)
+#include "stm32l4xx_hal.h"
+
+#define MAKE_PIN(className, port, pin) \
+class className { \
+public: \
+  static void Set() { \
+    HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET); \
+  } \
+  static void Clear() { \
+    HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET); \
+  } \
+  static void SetDirRead() { \
+    GPIO_InitTypeDef GPIO_InitStruct = {0}; \
+    GPIO_InitStruct.Pin = pin; \
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT; \
+    GPIO_InitStruct.Pull = GPIO_NOPULL; \
+    HAL_GPIO_Init(port, &GPIO_InitStruct); \
+  } \
+  static void SetDirWrite() { \
+    GPIO_InitTypeDef GPIO_InitStruct = {0}; \
+    GPIO_InitStruct.Pin = pin; \
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; \
+    GPIO_InitStruct.Pull = GPIO_NOPULL; \
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH; \
+    HAL_GPIO_Init(port, &GPIO_InitStruct); \
+  } \
+  static GPIO_PinState IsSet() { \
+    return HAL_GPIO_ReadPin(port, pin); \
+  } \
+};
+
+MAKE_PIN(PA8, GPIOA, GPIO_PIN_8);  // D9 on NUCLEO-L432KC
+MAKE_PIN(PB1, GPIOB, GPIO_PIN_1);  // User-selected SS (D6)
+MAKE_PIN(PB3, GPIOB, GPIO_PIN_3);  // SPI SCK (D13)
+MAKE_PIN(PB4, GPIOB, GPIO_PIN_4);  // SPI MISO (D12)
+MAKE_PIN(PB5, GPIOB, GPIO_PIN_5);  // SPI MOSI (D11)
+
+#undef MAKE_PIN
+
 #define MAKE_PIN(className, pin) \
 class className { \
 public: \

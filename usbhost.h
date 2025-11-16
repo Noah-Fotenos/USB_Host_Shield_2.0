@@ -33,6 +33,9 @@ e-mail   :  support@circuitsathome.com
 #include <spi4teensy3.h>
 #include <sys/types.h>
 #endif
+#if defined(STM32L432xx)
+#include "STM32L432KC_SPI.h"
+#endif
 
 /* SPI initialization */
 template< typename SPI_CLK, typename SPI_MOSI, typename SPI_MISO, typename SPI_SS > class SPi {
@@ -56,6 +59,13 @@ public:
 #warning "You need to initialize the SPI interface manually when using the STM32F4 platform"
         static void init() {
                 // Should be initialized by the user manually for now
+        }
+#elif defined(STM32L432xx)
+        static void init() {
+                // Configure the SPI pins and enable SPI at a conservative speed using the STM32L432 helpers
+                configureSPIPins();
+                initSPI(3, 0, 0);
+                disable_cs();
         }
 #elif !defined(SPDR)
         static void init() {
@@ -128,6 +138,8 @@ typedef SPi< P18, P23, P19, P5 > spi;
 typedef SPi< P26, P25, P24, P5 > spi;
 #elif defined(ARDUINO_Seeed_XIAO_nRF52840_Sense)
 typedef SPi< P8, P10, P9, P7 > spi;
+#elif defined(STM32L432xx)
+typedef SPi< PB3, PB5, PB4, PB1 > spi;
 #else
 #error "No SPI entry in usbhost.h"
 #endif
@@ -187,7 +199,10 @@ void MAX3421e< SPI_SS, INTR >::regWr(uint8_t reg, uint8_t data) {
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.beginTransaction(SPISettings(26000000, MSBFIRST, SPI_MODE0)); // The MAX3421E can handle up to 26MHz, use MSB First and SPI mode 0
 #endif
+
+#if !defined(STM32L432xx)
         SPI_SS::Clear();
+#endif
 
 #if USING_SPI4TEENSY3
         uint8_t c[2];
@@ -204,6 +219,11 @@ void MAX3421e< SPI_SS, INTR >::regWr(uint8_t reg, uint8_t data) {
         c[0] = reg | 0x02;
         c[1] = data;
         HAL_SPI_Transmit(&SPI_Handle, c, 2, HAL_MAX_DELAY);
+#elif defined(STM32L432xx)
+        enable_cs();
+        spiSendReceive(reg | 0x02);
+        spiSendReceive(data);
+        disable_cs();
 #elif !defined(SPDR) // ESP8266, ESP32
         USB_SPI.transfer(reg | 0x02);
         USB_SPI.transfer(data);
@@ -214,7 +234,9 @@ void MAX3421e< SPI_SS, INTR >::regWr(uint8_t reg, uint8_t data) {
         while(!(SPSR & (1 << SPIF)));
 #endif
 
+#if !defined(STM32L432xx)
         SPI_SS::Set();
+#endif
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.endTransaction();
 #endif
@@ -230,7 +252,10 @@ uint8_t* MAX3421e< SPI_SS, INTR >::bytesWr(uint8_t reg, uint8_t nbytes, uint8_t*
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.beginTransaction(SPISettings(26000000, MSBFIRST, SPI_MODE0)); // The MAX3421E can handle up to 26MHz, use MSB First and SPI mode 0
 #endif
+        
+#if !defined(STM32L432xx)
         SPI_SS::Clear();
+#endif
 
 #if USING_SPI4TEENSY3
         spi4teensy3::send(reg | 0x02);
@@ -241,6 +266,15 @@ uint8_t* MAX3421e< SPI_SS, INTR >::bytesWr(uint8_t reg, uint8_t nbytes, uint8_t*
         HAL_SPI_Transmit(&SPI_Handle, &data, 1, HAL_MAX_DELAY);
         HAL_SPI_Transmit(&SPI_Handle, data_p, nbytes, HAL_MAX_DELAY);
         data_p += nbytes;
+#elif defined(STM32L432xx)
+        enable_cs();
+        spiSendReceive(reg | 0x02);
+        while(nbytes) {
+                spiSendReceive(*data_p);
+                nbytes--;
+                data_p++;
+        }
+        disable_cs();
 #elif !defined(__AVR__) || !defined(SPDR)
 #if defined(ESP8266) || defined(ESP32)
         yield();
@@ -262,7 +296,10 @@ uint8_t* MAX3421e< SPI_SS, INTR >::bytesWr(uint8_t reg, uint8_t nbytes, uint8_t*
         while(!(SPSR & (1 << SPIF)));
 #endif
 
+        
+#if !defined(STM32L432xx)
         SPI_SS::Set();
+#endif
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.endTransaction();
 #endif
@@ -288,17 +325,26 @@ uint8_t MAX3421e< SPI_SS, INTR >::regRd(uint8_t reg) {
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.beginTransaction(SPISettings(26000000, MSBFIRST, SPI_MODE0)); // The MAX3421E can handle up to 26MHz, use MSB First and SPI mode 0
 #endif
+#if !defined(STM32L432xx)
         SPI_SS::Clear();
+#endif
 
 #if USING_SPI4TEENSY3
         spi4teensy3::send(reg);
         uint8_t rv = spi4teensy3::receive();
+#if !defined(STM32L432xx)
         SPI_SS::Set();
+#endif
 #elif defined(STM32F4)
         HAL_SPI_Transmit(&SPI_Handle, &reg, 1, HAL_MAX_DELAY);
         uint8_t rv = 0;
         HAL_SPI_Receive(&SPI_Handle, &rv, 1, HAL_MAX_DELAY);
         SPI_SS::Set();
+#elif defined(STM32L432xx)
+        enable_cs();
+        spiSendReceive(reg);
+        uint8_t rv = spiSendReceive(0);
+        disable_cs();
 #elif !defined(SPDR) || defined(SPI_HAS_TRANSACTION)
         USB_SPI.transfer(reg);
         uint8_t rv = USB_SPI.transfer(0); // Send empty byte
@@ -319,15 +365,15 @@ uint8_t MAX3421e< SPI_SS, INTR >::regRd(uint8_t reg) {
         return (rv);
 }
 /* multiple-byte register read  */
-
-/* returns a pointer to a memory position after last read   */
 template< typename SPI_SS, typename INTR >
 uint8_t* MAX3421e< SPI_SS, INTR >::bytesRd(uint8_t reg, uint8_t nbytes, uint8_t* data_p) {
         XMEM_ACQUIRE_SPI();
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.beginTransaction(SPISettings(26000000, MSBFIRST, SPI_MODE0)); // The MAX3421E can handle up to 26MHz, use MSB First and SPI mode 0
 #endif
+#if !defined(STM32L432xx)
         SPI_SS::Clear();
+#endif
 
 #if USING_SPI4TEENSY3
         spi4teensy3::send(reg);
@@ -347,6 +393,14 @@ uint8_t* MAX3421e< SPI_SS, INTR >::bytesRd(uint8_t reg, uint8_t nbytes, uint8_t*
         memset(data_p, 0, nbytes); // Make sure we send out empty bytes
         HAL_SPI_Receive(&SPI_Handle, data_p, nbytes, HAL_MAX_DELAY);
         data_p += nbytes;
+#elif defined(STM32L432xx)
+        enable_cs();
+        spiSendReceive(reg);
+        while(nbytes) {
+                *data_p++ = spiSendReceive(0);
+                nbytes--;
+        }
+        disable_cs();
 #elif !defined(SPDR) // ESP8266, ESP32
         yield();
         USB_SPI.transfer(reg);
@@ -375,7 +429,9 @@ uint8_t* MAX3421e< SPI_SS, INTR >::bytesRd(uint8_t reg, uint8_t nbytes, uint8_t*
 #endif
 #endif
 
+#if !defined(STM32L432xx)
         SPI_SS::Set();
+#endif
 #if defined(SPI_HAS_TRANSACTION)
         USB_SPI.endTransaction();
 #endif

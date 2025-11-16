@@ -62,6 +62,8 @@ typedef MAX3421e<Pb4, Pb3> MAX3421E; // MightyCore
 typedef MAX3421e<Pb4, Pb3> MAX3421E; // Sanguino
 #elif defined(ARDUINO_NRF52840_FEATHER_SENSE)
 typedef MAX3421e<P5, P6> MAX3421E; // ARDUINO_NRF52840_FEATHER_SENSE
+#elif defined(STM32L432xx)
+typedef MAX3421e<PB1, PA8> MAX3421E; // NUCLEO-L432KC using PB1 as SS and PA8 as INT
 #else
 typedef MAX3421e<P10, P9> MAX3421E; // Official Arduinos (UNO, Duemilanove, Mega, 2560, Leonardo, Due etc.), Intel Edison, Intel Galileo 2 or Teensy 2.0 and 3.x
 #endif
